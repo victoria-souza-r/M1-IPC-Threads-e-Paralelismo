@@ -1,5 +1,7 @@
 #ifndef PGM_H
 #define PGM_H
+#define MODE_NEG 0
+#define MODE SLICE 1
 #include <stdlib.h>
 
 // Facilitador para não precisar digitar 'unsigned char' toda vez
