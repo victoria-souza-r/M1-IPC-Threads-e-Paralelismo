@@ -5,7 +5,7 @@
 /* 
  * Filtro Negativo: s = 255 - r
  * Aplica em um bloco específico da imagem (de row_start até row_end).
- * Útil para ser chamado dentro das threads do Worker.
+ * Para ser chamado dentro das threads do Worker.
  */
 void apply_negative_block(const PGM* in, PGM* out, int row_start, int row_end);
 
