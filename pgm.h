@@ -7,7 +7,7 @@
 #include <stdlib.h>
 
 
-// Atalho para 'unsigned char' (8 bits, 0-255), ideal para tons de cinza
+// Atalho para 'unsigned char' (8 bits, 0-255)
 typedef unsigned char uchar;
 
 // Estrutura principal que armazena os dados da imagem PGM
