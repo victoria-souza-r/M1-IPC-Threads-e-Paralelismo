@@ -8,23 +8,21 @@
 #include "filters.h"
 #include "queue.h"
 
-// Variáveis Globais (Compartilhadas entre as threads)
-PGM g_in, g_out;      // Estruturas para as imagens de entrada e saída
-Queue g_queue;        // Fila de tarefas (monitorada por mutex/semáforo)
-Header g_header;      // Metadados da imagem (largura, altura, etc)
-int g_nthreads = 4;   // Quantidade de threads no pool
+// Variáveis Globais
+PGM g_in, g_out;
+Queue g_queue;
+Header g_header;
+int g_nthreads = 4;
 
 
-// Função da Thread (Consumidor)
+// Função da Thread
 void* worker_thread(void* arg) {
     Task task;
 
     while (1) {
-        // Tenta retirar uma tarefa da fila. Se a fila estiver vazia e fechada, retorna != 0
         if (queue_pop(&g_queue, &task) != 0)
             break;
 
-        // Aplica o filtro selecionado apenas no bloco de linhas designado pela tarefa
         if (g_header.mode == MODE_NEG) {
             apply_negative_block(&g_in, &g_out, task.row_start, task.row_end);
 
@@ -40,13 +38,14 @@ void* worker_thread(void* arg) {
 
 // MAIN WORKER
 int main(int argc, char** argv) {
-    // Validação básica dos argumentos de linha de comando
+    // Uso:
+    // worker <fifo> <threads> <neg|slice> [t1 t2] <saida.pgm>
+
     if (argc < 5) {
         fprintf(stderr, "Uso: %s <fifo> <threads> <neg|slice> [t1 t2] <saida.pgm>\n", argv[0]);
         return 1;
     }
 
-    // Captura parâmetros iniciais
     const char* fifo_path = argv[1];
     g_nthreads = atoi(argv[2]);
     if (g_nthreads <= 0) g_nthreads = 4;
@@ -57,7 +56,7 @@ int main(int argc, char** argv) {
     int mode;
     int t1 = 0, t2 = 0;
 
-  
+   
     // Parsing dos argumentos (Decide o filtro e captura t1/t2)
     if (strcmp(filter_type, "neg") == 0) {
         mode = MODE_NEG;
@@ -68,6 +67,7 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Erro: slice requer t1 e t2\n");
             return 1;
         }
+
         mode = MODE_SLICE;
         t1 = atoi(argv[4]);
         t2 = atoi(argv[5]);
@@ -78,11 +78,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-   
-    // 1. Abre FIFO (IPC - Inter-Process Communication)
+    // 1. Abre FIFO
     printf("[Worker] Abrindo FIFO %s...\n", fifo_path);
 
-    // O open() bloqueia até que o Sender abra o FIFO para escrita
     int fd = open(fifo_path, O_RDONLY);
     if (fd == -1) {
         perror("Erro ao abrir FIFO");
@@ -90,11 +88,10 @@ int main(int argc, char** argv) {
     }
 
    
-    // 2. Lê Metadados (Header) enviando pelo Sender
+    // 2. Lê Header (com segurança)
     size_t header_size = sizeof(Header);
     size_t total = 0;
 
-    // Garante a leitura total do struct Header independente da fragmentação do duto
     while (total < header_size) {
         ssize_t n = read(fd, ((char*)&g_header) + total, header_size - total);
         if (n <= 0) {
@@ -107,13 +104,13 @@ int main(int argc, char** argv) {
 
     printf("[Worker] Imagem recebida: %dx%d\n", g_header.w, g_header.h);
 
-    // Configura o modo de processamento baseado nos argumentos do terminal
+    // aplica parâmetros do CLI (sobrescreve os do sender)
     g_header.mode = mode;
     g_header.t1 = t1;
     g_header.t2 = t2;
 
-    
-    // 3. Aloca memória para matrizes de pixels
+
+    // 3. Aloca memória
     g_in.w = g_out.w = g_header.w;
     g_in.h = g_out.h = g_header.h;
     g_in.maxv = g_out.maxv = g_header.maxv;
@@ -129,9 +126,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-  
-    // 4. Lê Pixels (Dados da Imagem) do FIFO
+
+    // 4. Lê pixels (com segurança)
     size_t total_read = 0;
+
     while (total_read < img_size) {
         ssize_t n = read(fd, g_in.data + total_read, img_size - total_read);
         if (n <= 0) {
@@ -142,47 +140,48 @@ int main(int argc, char** argv) {
         total_read += n;
     }
 
-    close(fd); // Fecha o FIFO após a leitura completa
+    close(fd);
 
     
-    // 5. Inicializa Fila e Pool de Threads
+    // 5. Inicializa fila e threads
     queue_init(&g_queue);
 
     pthread_t* threads = malloc(sizeof(pthread_t) * g_nthreads);
-    
-    // Cria as threads consumidoras
+    if (!threads) {
+        fprintf(stderr, "Erro ao alocar threads\n");
+        return 1;
+    }
+
     for (int i = 0; i < g_nthreads; i++) {
         pthread_create(&threads[i], NULL, worker_thread, NULL);
     }
 
-   
-    // 6. Produtor: Cria tarefas dividindo a imagem em blocos
-    int chunk_size = 10; // Cada thread processa 10 linhas por vez
+  
+    // 6. Cria tarefas (blocos de linhas)
+    int chunk_size = 10;
 
     for (int i = 0; i < g_in.h; i += chunk_size) {
         Task t;
         t.row_start = i;
-        // Garante que o último bloco não ultrapasse a altura da imagem
         t.row_end = (i + chunk_size > g_in.h) ? g_in.h : i + chunk_size;
 
-        queue_push(&g_queue, t); // Insere na fila (bloqueia se estiver cheia)
+        queue_push(&g_queue, t);
     }
 
-   
-    // 7. Sincroniza Finalização
-    queue_close(&g_queue); // Sinaliza para as threads que não haverá mais tarefas
+    // 7. Finaliza processamento
+    queue_close(&g_queue);
 
     for (int i = 0; i < g_nthreads; i++) {
-        pthread_join(threads[i], NULL); // Aguarda cada thread terminar seu bloco
+        pthread_join(threads[i], NULL);
     }
 
-   
-    // 8. Salva o resultado final em disco (PGM P5)
+    
+    // 8. Salva imagem
     printf("[Worker] Salvando em %s...\n", out_path);
     write_pgm(out_path, &g_out);
 
-    
-    // 9. Limpeza de Recursos
+  
+    // 9. Limpeza
     free(threads);
     free(g_in.data);
     free(g_out.data);
