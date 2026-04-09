@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     // 1) CRIAÇÃO DO FIFO (IPC - Comunicação entre Processos)
     // mkfifo cria um "pipe nomeado" no sistema de arquivos com permissão 0666 (leitura/escrita)
     if (mkfifo(fifo_path, 0666) == -1) {
-        // Se o erro for EEXIST, significa que o FIFO já existe, o que não é um problema
+        // Se o erro for EEXIST, significa que o FIFO já existe
         if (errno != EEXIST) {
             perror("[Sender] Erro ao criar FIFO");
             return 1;
