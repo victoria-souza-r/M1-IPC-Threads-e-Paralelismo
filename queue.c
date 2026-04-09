@@ -5,7 +5,7 @@
 #include "queue.h"
 
 
-// Inicialização
+// Inicialização 
 void queue_init(Queue* q) {
     q->head = 0;
     q->tail = 0;
