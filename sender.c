@@ -17,17 +17,15 @@ int main(int argc, char** argv) {
     const char* fifo_path = argv[1];
     const char* inpath = argv[2];
 
-    // 1) CRIAÇÃO DO FIFO (IPC - Comunicação entre Processos)
-    // mkfifo cria um "pipe nomeado" no sistema de arquivos com permissão 0666 (leitura/escrita)
+    // 1) Garante a existência do FIFO
     if (mkfifo(fifo_path, 0666) == -1) {
-        // Se o erro for EEXIST, significa que o FIFO já existe
         if (errno != EEXIST) {
             perror("[Sender] Erro ao criar FIFO");
             return 1;
         }
     }
 
-    // 2) LEITURA DA IMAGEM DO DISCO
+    // 2) Lê a imagem
     PGM img;
     printf("[Sender] Lendo a imagem %s...\n", inpath);
     if (!read_pgm(inpath, &img)) {
@@ -35,19 +33,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // 3) PREPARAÇÃO DO CABEÇALHO (Metadados para o Worker)
+    // 3) Prepara cabeçalho
     Header header;
-    header.w = img.w;       // Largura
-    header.h = img.h;       // Altura
-    header.maxv = img.maxv; // Valor máximo de cinza (normalmente 255)
-    header.mode = MODE_NEG; // Modo padrão enviado (será sobrescrito pelo Worker)
+    header.w = img.w;
+    header.h = img.h;
+    header.maxv = img.maxv;
+    header.mode = MODE_NEG; // valor padrão (worker decide depois)
     header.t1 = 0;
     header.t2 = 0;
 
-    // 4) ABERTURA DO FIFO PARA ESCRITA
-    // O comando open() em um FIFO bloqueia a execução até que outro processo (Worker) abra para leitura
+    // 4) Abre FIFO (bloqueia até worker abrir)
     printf("[Sender] Aguardando o Worker se conectar ao FIFO '%s'...\n", fifo_path);
-    int fd = open(fifo_path, O_WRONLY); 
+    int fd = open(fifo_path, O_WRONLY);
     if (fd == -1) {
         perror("[Sender] Erro ao abrir FIFO");
         free_pgm(&img);
@@ -56,14 +53,11 @@ int main(int argc, char** argv) {
 
     printf("[Sender] Worker conectado! Enviando dados...\n");
 
-    // 5) ENVIO DO CABEÇALHO (Header)
-    // Usamos um loop while para garantir que todos os bytes do struct sejam transmitidos,
-    // tratando possíveis interrupções no fluxo do pipe.
+    // 5) Envia o header (garantindo envio completo)
     size_t header_size = sizeof(Header);
     ssize_t sent = 0;
 
     while (sent < (ssize_t)header_size) {
-        // Escreve no descritor de arquivo (fd) do FIFO
         ssize_t n = write(fd, ((char*)&header) + sent, header_size - sent);
         if (n <= 0) {
             perror("[Sender] Erro ao enviar cabeçalho");
@@ -74,13 +68,11 @@ int main(int argc, char** argv) {
         sent += n;
     }
 
-    // 6) ENVIO DOS PIXELS (Dados brutos da imagem)
-    // Transmissão da matriz de pixels (largura * altura bytes)
+    // 6) Envia os pixels (garantindo envio completo)
     size_t data_size = (size_t)img.w * img.h;
     ssize_t total = 0;
 
     while (total < (ssize_t)data_size) {
-        // Envia blocos de dados até que o tamanho total da imagem seja atingido
         ssize_t n = write(fd, img.data + total, data_size - total);
         if (n <= 0) {
             perror("[Sender] Erro ao enviar pixels");
@@ -91,8 +83,7 @@ int main(int argc, char** argv) {
         total += n;
     }
 
-    // 7) ENCERRAMENTO
-    // Fecha o descritor do FIFO e libera a memória alocada para a imagem
+    // 7) Finaliza
     close(fd);
     free_pgm(&img);
 
