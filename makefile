@@ -13,7 +13,7 @@ sender: sender.c pgm.c
 # Compilação do Processo Trabalhador (Worker)
 # Reúne a lógica principal, manipulação PGM, filtros de imagem
 # e a estrutura de fila sincronizada.
-# IMPORTANTE: -lpthread é necessário para o suporte a threads (POSIX)
+# -lpthread é necessário para o suporte a threads (POSIX)
 
 worker: worker.c pgm.c filters.c queue.c
 	gcc -Wall worker.c pgm.c filters.c queue.c -o worker -lpthread
