@@ -82,7 +82,7 @@ int read_pgm(const char* path, PGM* img) {
         return 0;
     }
 
-    // 6. Lê o bloco de dados binários de uma única vez (eficiência)
+    // 6. Lê o bloco de dados binários de uma única vez 
     size_t n = fread(img->data, 1, size, f);
     if (n != size) {
         fprintf(stderr, "Erro: leitura incompleta (%zu de %zu bytes).\n", n, size);
